@@ -44,45 +44,59 @@ func ompFiles() []file {
 	var out []file
 	seen := map[string]bool{}
 	for _, root := range ompSessionRoots() {
-		paths, _ := filepath.Glob(filepath.Join(root, "*", "*.jsonl"))
-		for _, p := range paths {
-			if seen[p] {
-				continue
+		out = ompFilesUnder(out, seen, root)
+	}
+	return out
+}
+
+// ompFilesIn are the sessions in a distro's omp folder (~/.omp/agent):
+// the variables that move it aren't read from Windows, so a profile's or
+// $XDG_DATA_HOME's aren't.
+func ompFilesIn(dir string) []file {
+	return ompFilesUnder(nil, map[string]bool{}, filepath.Join(dir, "sessions"))
+}
+
+// ompFilesUnder adds the sessions under one sessions folder: each
+// <time>_<id>.jsonl, and its subagents' and advisor's beside it.
+func ompFilesUnder(out []file, seen map[string]bool, root string) []file {
+	paths, _ := filepath.Glob(filepath.Join(root, "*", "*.jsonl"))
+	for _, p := range paths {
+		if seen[p] {
+			continue
+		}
+		seen[p] = true
+		name := strings.TrimSuffix(filepath.Base(p), ".jsonl")
+		_, id, ok := strings.Cut(name, "_")
+		if !ok || id == "" {
+			continue
+		}
+		key := "omp:" + id
+		f := file{agent: "omp", key: key, path: p, main: true}
+		if !stat(&f) {
+			continue
+		}
+		out = append(out, f)
+		// its subagents and advisor, at any depth
+		filepath.WalkDir(strings.TrimSuffix(p, ".jsonl"), func(q string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
 			}
-			seen[p] = true
-			name := strings.TrimSuffix(filepath.Base(p), ".jsonl")
-			_, id, ok := strings.Cut(name, "_")
-			if !ok || id == "" {
-				continue
-			}
-			key := "omp:" + id
-			f := file{agent: "omp", key: key, path: p, main: true}
-			if !stat(&f) {
-				continue
-			}
-			out = append(out, f)
-			// its subagents and advisor, at any depth
-			filepath.WalkDir(strings.TrimSuffix(p, ".jsonl"), func(q string, d fs.DirEntry, err error) error {
-				if err != nil {
-					return nil
-				}
-				if d.IsDir() {
-					// side questions (/btw) are kept apart, as .json
-					if d.Name() == "btw-history" {
-						return filepath.SkipDir
-					}
-					return nil
-				}
-				if !strings.HasSuffix(q, ".jsonl") {
-					return nil
-				}
-				sub := file{agent: "omp", key: key, path: q}
-				if stat(&sub) {
-					out = append(out, sub)
+			if d.IsDir() {
+				// side questions (/btw) are kept apart, as .json
+				if d.Name() == "btw-history" {
+					return filepath.SkipDir
 				}
 				return nil
-			})
-		}
+			}
+			if !strings.HasSuffix(q, ".jsonl") {
+				return nil
+			}
+			sub := file{agent: "omp", key: key, path: q}
+			if stat(&sub) {
+				out = append(out, sub)
+			}
+			return nil
+		})
 	}
 	return out
 }
