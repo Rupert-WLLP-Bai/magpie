@@ -204,6 +204,75 @@ func TestWSLOmpSessionDeleted(t *testing.T) {
 	}
 }
 
+// A distro's named profiles are read as its default folder is: one
+// session's file and its artifacts move to a profile, and both stay
+// listed, only the profile's resumed through it.
+func TestWSLOmpProfiles(t *testing.T) {
+	for _, profile := range []string{"work", "client-a.v2"} {
+		t.Run(profile, func(t *testing.T) {
+			home, _ := wslDistro(t)
+			from := filepath.Join(home, ".omp", "agent", "sessions", "--work-omp--")
+			to := filepath.Join(home, ".omp", "profiles", profile, "agent", "sessions", "--work-omp--")
+			if err := os.MkdirAll(to, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			// the session's file and the folder beside it (its subagents
+			// and advisor), leaving the default folder's other sessions
+			for _, p := range []string{
+				filepath.Join(from, "2026-09-28T08-00-00-000Z_"+ompMain+".jsonl"),
+				filepath.Join(from, "2026-09-28T08-00-00-000Z_"+ompMain),
+			} {
+				if err := os.Rename(p, filepath.Join(to, filepath.Base(p))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ss := List(0)
+			wslSettle()
+			m := find(t, ss, "omp", ompMain)
+			if m.WSL != "Ubuntu" || !strings.HasPrefix(m.Path, to) || len(m.Models) != 4 {
+				t.Fatalf("profile session: %+v", m)
+			}
+			want := "omp --profile " + profile + " --resume " + ompMain
+			if !strings.Contains(m.Resume, want) {
+				t.Fatalf("resume doesn't select %s: %s", profile, m.Resume)
+			}
+			// the default folder's own sessions are untouched by it
+			for _, id := range []string{ompFork, ompNamed} {
+				d := find(t, ss, "omp", id)
+				if strings.Contains(d.Resume, "--profile") {
+					t.Fatalf("%s resumed through a profile: %s", id, d.Resume)
+				}
+			}
+			st := StatsFor(0)
+			var usage Tokens
+			for _, s := range st.Sessions {
+				if s.Key == "omp:"+ompMain {
+					usage = s.Tokens
+				}
+			}
+			if usage != m.Tokens {
+				t.Fatalf("usage tokens %+v, want %+v", usage, m.Tokens)
+			}
+			old := time.Now().Add(-time.Hour)
+			filepath.WalkDir(to, func(p string, _ os.DirEntry, _ error) error { return os.Chtimes(p, old, old) })
+			tr, err := Delete("omp", ompMain)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(m.Path); !os.IsNotExist(err) {
+				t.Fatalf("profile session wasn't deleted: %v", err)
+			}
+			if _, err := Restore(tr.Key); err != nil {
+				t.Fatal(err)
+			}
+			back, ok := findManaged(ListAgent("omp"), ompMain)
+			if !ok || back.Path != m.Path || !strings.Contains(back.Resume, want) || len(back.Models) != 4 {
+				t.Fatalf("restored profile session: %+v, %v", back, ok)
+			}
+		})
+	}
+}
+
 // A stopped distro's sessions are listed as last read, and nothing in it is
 // opened: that would start it.
 func TestWSLStoppedDistroKept(t *testing.T) {

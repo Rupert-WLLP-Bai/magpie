@@ -31,13 +31,19 @@ func OmpDir() string {
 // sessions/, each profile's, and $XDG_DATA_HOME/omp/sessions once omp has
 // moved its data there (Linux and macOS).
 func ompSessionRoots() []string {
-	roots := []string{filepath.Join(OmpDir(), "sessions")}
-	profiles, _ := filepath.Glob(filepath.Join(filepath.Dir(OmpDir()), "profiles", "*", "agent", "sessions"))
-	roots = append(roots, profiles...)
+	roots := ompRootsIn(OmpDir())
 	if d := appdir.Getenv("XDG_DATA_HOME"); d != "" && runtime.GOOS != "windows" {
 		roots = append(roots, filepath.Join(d, "omp", "sessions"))
 	}
 	return roots
+}
+
+// ompRootsIn are the sessions folders of an omp agent folder (~/.omp/agent):
+// its own, and each profile's beside it (~/.omp/profiles/<name>/agent).
+func ompRootsIn(dir string) []string {
+	roots := []string{filepath.Join(dir, "sessions")}
+	profiles, _ := filepath.Glob(filepath.Join(filepath.Dir(dir), "profiles", "*", "agent", "sessions"))
+	return append(roots, profiles...)
 }
 
 func ompFiles() []file {
@@ -49,11 +55,33 @@ func ompFiles() []file {
 	return out
 }
 
-// ompFilesIn are the sessions in a distro's omp folder (~/.omp/agent):
-// the variables that move it aren't read from Windows, so a profile's or
-// $XDG_DATA_HOME's aren't.
+// ompFilesIn are the sessions in a distro's omp folder (~/.omp/agent) and
+// its profiles': the variables that move them (PI_CODING_AGENT_DIR,
+// $XDG_DATA_HOME) are the distro's and aren't read from Windows.
 func ompFilesIn(dir string) []file {
-	return ompFilesUnder(nil, map[string]bool{}, filepath.Join(dir, "sessions"))
+	var out []file
+	seen := map[string]bool{}
+	for _, root := range ompRootsIn(dir) {
+		out = ompFilesUnder(out, seen, root)
+	}
+	return out
+}
+
+// ompProfile identifies the profile owning a main session file. Default
+// and XDG stores have no profile component in their paths.
+func ompProfile(path string) string {
+	if path == "" {
+		return ""
+	}
+	sessions := filepath.Dir(filepath.Dir(path))
+	agent := filepath.Dir(sessions)
+	profile := filepath.Dir(agent)
+	profiles := filepath.Dir(profile)
+	if filepath.Base(sessions) != "sessions" || filepath.Base(agent) != "agent" ||
+		filepath.Base(profiles) != "profiles" || filepath.Base(filepath.Dir(profiles)) != ".omp" {
+		return ""
+	}
+	return filepath.Base(profile)
 }
 
 // ompFilesUnder adds the sessions under one sessions folder: each
