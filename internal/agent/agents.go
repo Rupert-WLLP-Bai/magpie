@@ -112,7 +112,7 @@ func All() []*Agent {
 		atomcode(home),
 		alma(),
 		cindy(),
-	}, wslAgents()...)
+	}, append(ompProfiles(home), wslAgents()...)...)
 }
 
 // ---- accessors -------------------------------------------------------------
