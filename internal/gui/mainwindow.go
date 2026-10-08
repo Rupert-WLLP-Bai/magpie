@@ -10,19 +10,14 @@ import (
 	"github.com/yetone/magpie/internal/settings"
 )
 
-// mainMacWindow: the main window's Mac options. A window belongs to the
-// Space it was last shown on, and showing it again takes the user there; one
-// first shown while another app was full screen (a restart to update, with
-// the user in that app) belonged to that app's Space from then on, and every
-// Open went back to it. It moves to the Space the user is on whenever it is
-// shown instead, and can still be made full screen itself.
+// mainMacWindow keeps an open window on its Space. showMainWindow temporarily
+// moves only a hidden window to the active Space when it is reopened.
 func mainMacWindow() application.MacWindow {
 	return application.MacWindow{
 		// no InvisibleTitleBarHeight: that strip drags from anywhere in
 		// it, tabs included; the header marks what drags instead
-		TitleBar: application.MacTitleBarHiddenInset,
-		CollectionBehavior: application.MacWindowCollectionBehaviorMoveToActiveSpace |
-			application.MacWindowCollectionBehaviorFullScreenPrimary,
+		TitleBar:           application.MacTitleBarHiddenInset,
+		CollectionBehavior: application.MacWindowCollectionBehaviorFullScreenPrimary,
 	}
 }
 

@@ -232,8 +232,7 @@ func (h *host) openMain(url string) {
 		h.whenLoaded(w, func() {
 			if h.main == w {
 				h.placeMain(w)
-				w.Show()
-				w.Focus()
+				showMainWindow(w)
 			}
 		})
 		return
@@ -245,8 +244,7 @@ func (h *host) openMain(url string) {
 		return // made again, it is shown once its page has come
 	}
 	h.placeMain(h.main)
-	h.main.Show()
-	h.main.Focus()
+	showMainWindow(h.main)
 }
 
 // placeMain puts the main window, made and not shown yet, as it was last

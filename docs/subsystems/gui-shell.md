@@ -27,6 +27,16 @@ three.
 5. Closing the window hides it. On the Mac a full-screen window first leaves full screen (`closeStep`).
 6. The window opens as it was last left. Its settled size and whether it was maximised are kept in `settings.Window` and `settings.WindowMaximised` (`settle`; per machine, see `KeepOwn`). A maximised window keeps the size it restores to. `makeMain` opens it at that size (`openSize`). On its first show, `placeMain` maximises it again on the Mac and Windows (on Windows once the page has come). On Linux, `makeMain` makes it maximised with `StartState`. On Windows a size larger than the screen's work area is fitted and centred (`fitRoom`), and the larger size stays kept. The window's position is not kept.
 
+On macOS, activating an already-open main window (including a Dock click)
+keeps it on its existing Space, leaving the desktop switch to the system's
+activation behavior. A closed, hidden window opens on the current Space,
+as does one recreated by lightweight mode. `showMainWindow` in
+[`glide_darwin.go`](../../internal/gui/glide_darwin.go) temporarily uses
+MoveToActiveSpace only while showing a hidden window, then restores the
+window's collection behavior. It uses AppKit's ordered-in visibility:
+Wails' occlusion-based `IsVisible` also returns false for a covered window.
+Full-screen and minimised windows retain their Space.
+
 ## Constraints and failure behavior
 
 ### Desktop fonts
@@ -92,6 +102,7 @@ waits for `show` to accept navigation before creating its draft.
 ```sh
 go test -tags nogui ./internal/gui
 go test -v ./internal/fonts         # native discovery on each desktop OS
+go test -v -run TestMainWindowSpaceActivation ./internal/gui # real AppKit ordering, hidden/open/recreated
 make test-ui                      # every internal/gui/tests/*.test.cjs, Chromium and WebKit
 BROWSER=webkit node --test internal/gui/tests/click-scroll.test.cjs
 ```

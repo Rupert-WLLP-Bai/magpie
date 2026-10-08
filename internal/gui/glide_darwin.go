@@ -121,6 +121,24 @@ static void dockOnFullscreen(void) {
 		}];
 	});
 }
+
+// Only a closed, hidden window follows the current Space. NSWindow's visible
+// means ordered in, even on another Space; Wails' IsVisible uses occlusion,
+// which also says false for an open window covered by another window.
+static unsigned long prepareMainShow(void *window) {
+	NSWindow *win = (NSWindow *)window;
+	NSWindowCollectionBehavior original = win.collectionBehavior;
+	NSWindowCollectionBehavior behavior = original & ~NSWindowCollectionBehaviorMoveToActiveSpace;
+	if (!win.visible && !win.miniaturized && !(win.styleMask & NSWindowStyleMaskFullScreen)) {
+		behavior |= NSWindowCollectionBehaviorMoveToActiveSpace;
+	}
+	win.collectionBehavior = behavior;
+	return original;
+}
+
+static void restoreMainSpace(void *window, unsigned long behavior) {
+	((NSWindow *)window).collectionBehavior = behavior;
+}
 */
 import "C"
 
@@ -187,4 +205,15 @@ func setPageZoom(w *application.WebviewWindow, z float64) {
 	if p := w.NativeWindow(); p != nil {
 		C.setPageZoom(p, C.double(z))
 	}
+}
+
+// showMainWindow runs on the main thread, so the temporary Space behavior
+// covers both ordering and activation, and is restored before another event.
+func showMainWindow(w *application.WebviewWindow) {
+	if p := w.NativeWindow(); p != nil {
+		original := C.prepareMainShow(p)
+		defer C.restoreMainSpace(p, original)
+	}
+	w.Show()
+	w.Focus()
 }
