@@ -89,12 +89,19 @@ func ompYAMLList(v string) bool { return strings.HasPrefix(v, "[") || strings.Ha
 // normalizeProfileName); it refuses any other.
 var ompProfileName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,63}$`)
 
+// ompReserved is a Windows device name omp refuses on every platform
+// (pi-utils dirs.ts, normalizeProfileName): CON, PRN, AUX, NUL, COM0–COM9,
+// LPT0–LPT9, and the same with a dot and anything after (con.work).
+var ompReserved = regexp.MustCompile(`(?i)^(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])(?:\..*)?$`)
+
 // ompProfileOK says whether name is one omp takes as a profile (pi-utils
-// dirs.ts): "default" is none, and a name omp refuses is no profile
-// either. What a profiles folder holds is checked against this, and so is
-// what a distro's probe finds.
+// dirs.ts): "default" is none, a trailing dot is refused, and so is a
+// Windows reserved device name. What a profiles folder holds is checked
+// against this, and so is what a distro's probe finds, and the profile
+// OMP_PROFILE names for the default row.
 func ompProfileOK(name string) bool {
-	return name != "" && name != "default" && ompProfileName.MatchString(name) && !strings.HasSuffix(name, ".")
+	return name != "" && name != "default" && ompProfileName.MatchString(name) &&
+		!strings.HasSuffix(name, ".") && !ompReserved.MatchString(name)
 }
 
 // ompRoot is where omp keeps its agent folder and its profiles: ~/.omp, or

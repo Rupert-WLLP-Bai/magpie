@@ -75,20 +75,26 @@ func TestOmpProfiles(t *testing.T) {
 	}
 }
 
-// A profile name omp refuses ("Bad", "work.") is no profile, "default" is
-// the default row, and a folder that isn't a directory is no profile
-// either. One whose agent folder has no config.yml yet is still a row: the
-// first Set makes the file, and only that profile's.
+// A profile name omp refuses ("Bad", "work.", a Windows reserved device
+// name) is no profile, "default" is the default row, and a folder that
+// isn't a directory is no profile either. One whose agent folder has no
+// config.yml yet is still a row: the first Set makes the file, and only
+// that profile's. "work." is not made as a folder: Windows drops the
+// trailing dot, so MkdirAll("work.") would create "work" and list it.
 func TestOmpProfilesNameRules(t *testing.T) {
 	home := syncHome(t)
 	root := filepath.Join(home, ".omp")
-	for _, name := range []string{"Bad", "default", "work."} {
-		os.MkdirAll(filepath.Join(root, "profiles", name, "agent"), 0o755)
+	for _, name := range []string{"Bad", "default"} {
+		if err := os.MkdirAll(filepath.Join(root, "profiles", name, "agent"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	// a file where a profile folder would be
 	writeFile(t, filepath.Join(root, "profiles", "notes"), "not a profile\n")
 	fresh := filepath.Join(root, "profiles", "fresh")
-	os.MkdirAll(fresh, 0o755)
+	if err := os.MkdirAll(fresh, 0o755); err != nil {
+		t.Fatal(err)
+	}
 
 	got := map[string]bool{}
 	for _, a := range ompProfiles(home) {
@@ -112,6 +118,14 @@ func TestOmpProfilesNameRules(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "agent", "config.yml")); !os.IsNotExist(err) {
 		t.Fatalf("the default row's config was made: %v", err)
+	}
+	for _, name := range []string{"work.", "aux", "nul", "com1", "lpt9.x", "con.work", "COM1"} {
+		if ompProfileOK(name) {
+			t.Fatalf("%q is a profile", name)
+		}
+	}
+	if d := parseProbe("U", "home:/home/me\nprofile:omp:aux\nprofile:omp:con.work\nprofile:omp:work.\n"); d == nil || len(d.OmpProfiles) != 0 {
+		t.Fatalf("probe kept a refused name: %+v", d)
 	}
 }
 
