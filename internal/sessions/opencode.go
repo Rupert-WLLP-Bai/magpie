@@ -190,6 +190,10 @@ func closeDBs() {
 		db.Close()
 		delete(dbs, p)
 	}
+	for _, c := range cursorAppClean {
+		c()
+	}
+	cursorAppClean = nil
 }
 
 type ocDB struct{ db *sql.DB }

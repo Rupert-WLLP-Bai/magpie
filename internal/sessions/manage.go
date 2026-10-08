@@ -278,14 +278,24 @@ func sessionPaths(agent, id string, fs []file) []string {
 		}
 	}
 	if agent == "cursor" {
-		// a chat is its folder, its subagents' chats theirs, and the
-		// transcripts Cursor wrote of it
+		// a CLI chat is its folder, its subagents' chats theirs, and the
+		// transcripts Cursor wrote of it. An app composer is a row in
+		// state.vscdb; its path is that file and an id, and deleting it
+		// would take Cursor's whole database with it.
 		cwd := ""
+		cli := false
 		for _, f := range fs {
+			if filepath.Base(f.path) != "store.db" {
+				continue
+			}
+			cli = true
 			add(filepath.Dir(f.path))
 			if st := cache[f.path]; st != nil && f.main {
 				cwd = st.Cwd
 			}
+		}
+		if !cli {
+			return nil
 		}
 		for _, p := range cursorTranscripts(cwd, id) {
 			add(p)

@@ -348,6 +348,8 @@ type file struct {
 	alma     *almaStore
 	rev      string
 	readOnly bool
+	// Cursor's app: the composers in state.vscdb, read from a snapshot
+	app *cursorAppStore
 	// wsl: the WSL distro whose home it is in; cold: that distro isn't
 	// running, and the file, as last listed, is not to be opened (that
 	// would start the distro)
@@ -462,6 +464,7 @@ func Dirs() []string {
 		{OmpDir(), filepath.Join(OmpDir(), "sessions")},
 		{FactoryDir(), filepath.Join(FactoryDir(), "sessions")},
 		{CursorDir(), filepath.Join(CursorDir(), "chats")},
+		{filepath.Dir(cursorAppDB()), cursorAppDB()},
 		{AlmaDir(), almaDB()},
 	} {
 		if _, err := os.Stat(d.sessions); err == nil {

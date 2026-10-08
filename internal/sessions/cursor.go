@@ -269,7 +269,7 @@ func cursorFiles() []file {
 		}
 		out = append(out, f)
 	}
-	return out
+	return append(out, cursorAppFiles()...)
 }
 
 // pbFields reads a protobuf message's fields of one number that are bytes
@@ -423,8 +423,12 @@ func cursorTyped(parts []cursorPart) (typed, other string) {
 	return rest, ""
 }
 
-// parseCursor reads a chat's store whole.
+// parseCursor reads a chat's store whole. A composer from the Cursor app
+// is the same agent, read from state.vscdb instead.
 func parseCursor(f file) *state {
+	if f.app != nil {
+		return parseCursorApp(f)
+	}
 	s := &state{Size: f.size, Mod: f.mod.UnixNano()}
 	dir := filepath.Dir(f.path)
 	last := f.mod

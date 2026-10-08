@@ -296,6 +296,137 @@ func TestCursor(t *testing.T) {
 	}
 }
 
+func TestCursorAppComposers(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.vscdb")
+	makeCursorAppDB(t, path)
+	old := cursorAppDBPath
+	cursorAppDBPath = func() string { return path }
+	t.Cleanup(func() { cursorAppDBPath = old })
+	before := snapshot(dir)
+	ss := List(0)
+	if after := snapshot(dir); !maps.Equal(before, after) {
+		t.Fatalf("Cursor's database changed:\n%v\n%v", before, after)
+	}
+	if n := count(ss, "cursor"); n != 1 {
+		t.Fatalf("cursor sessions %d, want the app composer (its draft and subagent are not their own): %+v", n, ss)
+	}
+	s, ok := findSession(ss, "cursor", "app-main")
+	if !ok {
+		t.Fatal("the app composer isn't listed")
+	}
+	if s.Title != "Fix the panel" || s.Cwd != "/work/app" || !s.ReadOnly || s.Resume != "" {
+		t.Fatalf("app composer %+v", s)
+	}
+	if s.Tokens != (Tokens{Input: 110, Output: 44}) {
+		t.Fatalf("tokens %+v, want the composer's and its subagent's", s.Tokens)
+	}
+	if len(s.Models) != 2 {
+		t.Fatalf("models %+v", s.Models)
+	}
+	if _, ok := findSession(ss, "cursor", "app-sub"); ok {
+		t.Fatal("the subagent is listed on its own")
+	}
+	if _, ok := findSession(ss, "cursor", "app-draft"); ok {
+		t.Fatal("the empty draft is listed")
+	}
+	if !slices.Contains(Dirs(), dir) {
+		t.Fatalf("dirs %v", Dirs())
+	}
+	m, ok := findManaged(ListAgent("cursor"), "app-main")
+	if !ok || m.Deletable || m.Messages != 2 {
+		t.Fatalf("managed %+v", m)
+	}
+	if _, err := Delete("cursor", "app-main"); err == nil {
+		t.Fatal("deleting an app composer should refuse")
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("state.vscdb after delete: %v", err)
+	}
+}
+
+// makeCursorAppDB writes a Cursor app state.vscdb in WAL mode, as the app
+// keeps it: one composer, its subagent, and a draft nothing was said in.
+func makeCursorAppDB(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, q := range []string{
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA wal_autocheckpoint = 0",
+		`CREATE TABLE composerHeaders (
+			composerId TEXT PRIMARY KEY,
+			workspaceId TEXT,
+			createdAt INTEGER,
+			lastUpdatedAt INTEGER,
+			isArchived INTEGER,
+			isSubagent INTEGER,
+			recency INTEGER,
+			checkpointAt INTEGER,
+			value TEXT,
+			subagentTypeName TEXT)`,
+		`CREATE TABLE cursorDiskKV (key TEXT PRIMARY KEY, value BLOB)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	header := func(name, cwd, parent string) string {
+		h := map[string]any{
+			"name": name,
+			"workspaceIdentifier": map[string]any{
+				"uri": map[string]any{"fsPath": cwd, "path": cwd},
+			},
+		}
+		if parent != "" {
+			h["subagentInfo"] = map[string]any{"parentComposerId": parent, "rootParentConversationId": parent}
+		}
+		b, err := json.Marshal(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+	insert := func(id, name, cwd, parent string, sub int, created, updated int64) {
+		t.Helper()
+		if _, err := db.Exec(`INSERT INTO composerHeaders (composerId, createdAt, lastUpdatedAt, isSubagent, value) VALUES (?, ?, ?, ?, ?)`,
+			id, created, updated, sub, header(name, cwd, parent)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("app-main", "Fix the panel", "/work/app", "", 0, 1_700_000_000_000, 1_700_000_100_000)
+	insert("app-sub", "", "/work/app", "app-main", 1, 1_700_000_050_000, 1_700_000_080_000)
+	insert("app-draft", "", "", "", 0, 1_700_000_200_000, 1_700_000_200_000)
+	bubble := func(id, composer string, typ, in, out int) {
+		t.Helper()
+		b, err := json.Marshal(map[string]any{
+			"type": typ, "bubbleId": id,
+			"tokenCount": map[string]int{"inputTokens": in, "outputTokens": out},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)`, "bubbleId:"+composer+":"+id, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bubble("b1", "app-main", 1, 100, 0)
+	bubble("b2", "app-main", 2, 0, 40)
+	bubble("b3", "app-sub", 2, 10, 4)
+	for _, row := range []struct{ id, model string }{{"app-main", "grok-4.6"}, {"app-sub", "composer-2.5"}} {
+		b, err := json.Marshal(map[string]any{"modelConfig": map[string]any{"modelName": row.model}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)`, "composerData:"+row.id, b); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestCursorDelete(t *testing.T) {
 	dir := cursorSetup(t)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "config"))
